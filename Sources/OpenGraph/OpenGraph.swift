@@ -1,28 +1,32 @@
 import Foundation
 
-public struct OpenGraph {
+public class OpenGraph {
     
-    public let source: [OpenGraphMetadata: String]
+    var session: URLSession?
+    public static let shared = OpenGraph()
+    
+    private init() {}
     
     @discardableResult
-    public static func fetch(url: URL, headers: [String: String]? = nil, configuration: URLSessionConfiguration = .default, completion: @escaping (Result<OpenGraph, Error>) -> Void) -> URLSessionDataTask {
+    public func fetch(url: URL, headers: [String: String]? = nil, configuration: URLSessionConfiguration = .default, completion: @escaping (Result<[OpenGraphMetadata: String], Error>) -> Void) -> URLSessionDataTask {
         var mutableURLRequest = URLRequest(url: url)
         headers?.compactMapValues { $0 }.forEach {
             mutableURLRequest.setValue($1, forHTTPHeaderField: $0)
         }
-        let session = URLSession(configuration: configuration)
-        let task = session.dataTask(with: mutableURLRequest, completionHandler: { data, response, error in
+        session?.invalidateAndCancel()
+        session = URLSession(configuration: configuration)
+        let task = session?.dataTask(with: mutableURLRequest, completionHandler: { [self] data, response, error in
             if let error = error {
                 completion(.failure(error))
             } else {
                 handleFetchResult(data: data, response: response, completion: completion)
             }
         })
-        task.resume()
-        return task
+        task?.resume()
+        return task!
     }
     
-    private static func handleFetchResult(data: Data?, response: URLResponse?, completion: @escaping (Result<OpenGraph, Error>) -> Void) {
+    private func handleFetchResult(data: Data?, response: URLResponse?, completion: @escaping (Result<[OpenGraphMetadata: String], Error>) -> Void) {
         guard let data = data, let response = response as? HTTPURLResponse else {
             return
         }
@@ -33,22 +37,21 @@ public struct OpenGraph {
                 completion(.failure(OpenGraphParseError.encodingError))
                 return
             }
-            let og = OpenGraph(htmlString: htmlString)
-            completion(.success(og))
+            completion(.success(process(htmlString: htmlString)))
         }
     }
 
-    public init(htmlString: String) {
-        self = OpenGraph(htmlString: htmlString, parser: DefaultOpenGraphParser())
+//    public init(htmlString: String) {
+//        self = OpenGraph(htmlString: htmlString, parser: DefaultOpenGraphParser())
+//    }
+    
+    func process(htmlString: String) -> [OpenGraphMetadata: String] {
+        return DefaultOpenGraphParser().parse(htmlString: htmlString)
     }
     
-    init(htmlString: String, parser: OpenGraphParser) {
-        source = parser.parse(htmlString: htmlString)
-    }
-    
-    public subscript (attributeName: OpenGraphMetadata) -> String? {
-        return source[attributeName]
-    }
+//    public subscript (attributeName: OpenGraphMetadata) -> String? {
+//        return source[attributeName]
+//    }
 }
 
 private struct DefaultOpenGraphParser: OpenGraphParser {
